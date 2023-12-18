@@ -1,0 +1,56 @@
+﻿@using SharpEXR
+@using BigGustave
+
+@page "/"
+
+<PageTitle>COEXR</PageTitle>
+
+<h1>Конвертер OpenEXR в PNG</h1>
+
+<div style="display: grid">
+    Загрузите изображение в формате OpenEXR
+    <InputFile OnChange="@LoadFilesAsync" />
+
+    @if (isLoading) {
+        <p>Uploading...</p>
+    }
+
+    @foreach (var image in imageData) {
+        <img src="@image" />
+    }
+</div>
+
+
+@code {
+    private List<string> imageData = new();
+    private bool isLoading { get; set; }
+
+    private async void LoadFilesAsync(InputFileChangeEventArgs e) {
+        isLoading = true;
+        imageData.Clear();
+
+        foreach (var file in e.GetMultipleFiles(1)) {
+            var ms = new MemoryStream();
+            await file.OpenReadStream(long.MaxValue).CopyToAsync(ms);
+            System.IO.File.WriteAllBytes("tmp.exr", ms.ToArray());
+            var exr = EXRFile.FromFile("tmp.exr");
+            foreach (var part in exr.Parts) {
+                part.OpenParallel("tmp.exr");
+                var rgba = part.GetBytes(ImageDestFormat.PremultipliedRGBA8, GammaEncoding.sRGB);
+                var size = rgba.Length;
+                var png = PngBuilder.Create(part.DataWindow.Width, part.DataWindow.Height, true);
+                int i = 0;
+                for (int y = 0; y < 512; y++) {
+                    for (int x = 0; x < 512; x++) {
+                        png.SetPixel(new Pixel(rgba[i++], rgba[i++], rgba[i++], rgba[i++], false), x, y);
+                    }
+                }
+                var pngBytes = png.Save();
+                imageData.Add(string.Format("data:image/jpeg;base64,{0}", Convert.ToBase64String(pngBytes)));
+            }
+        }
+        isLoading = false;
+        StateHasChanged();
+    }
+
+}
